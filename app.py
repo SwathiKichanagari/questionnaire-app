@@ -1,84 +1,110 @@
 import streamlit as st
 import pandas as pd
 
-# -------------------------
-# Page Config
-# -------------------------
-st.set_page_config(page_title="Questionnaire Generator", layout="wide")
+st.set_page_config(layout="wide")
 
-# -------------------------
-# Title
-# -------------------------
-st.markdown("## 📋 Integration Questionnaire Generator")
-
-# -------------------------
-# Load Excel
-# -------------------------
+# ===============================
+# LOAD DATA
+# ===============================
 @st.cache_data
 def load_data():
     return pd.read_excel("questionnaire.xlsx", sheet_name=None)
 
 data = load_data()
 
-# -------------------------
-# Sidebar (Professional UI)
-# -------------------------
-st.sidebar.title("Filters")
+# ===============================
+# SIDEBAR
+# ===============================
+st.sidebar.header("Filters")
 
 domain = st.sidebar.selectbox("Select Domain", list(data.keys()))
 
 df = data[domain]
+df.columns = ["Category", "Question", "Notes", "Priority"]
 
-categories = df["Category"].dropna().unique()
+categories = df["Category"].unique()
 selected_categories = st.sidebar.multiselect(
     "Select Categories",
     categories,
     default=categories
 )
 
-# -------------------------
-# Filter Data
-# -------------------------
 filtered_df = df[df["Category"].isin(selected_categories)]
 
-# -------------------------
-# Select All Option
-# -------------------------
-select_all = st.checkbox("Select All Questions", value=True)
+# ===============================
+# SESSION STATE INIT
+# ===============================
+if "checkbox_state" not in st.session_state:
+    st.session_state.checkbox_state = {}
 
-st.markdown(f"### Questions for: {domain}")
+# ===============================
+# MAIN UI
+# ===============================
+st.title("📋 Integration Questionnaire Generator")
 
-selected_rows = []
+# ===============================
+# BUTTONS (WORKING)
+# ===============================
+col1, col2 = st.columns(2)
+
+with col1:
+    if st.button("Select All"):
+        for i in filtered_df.index:
+            key = f"{domain}_{i}"
+            st.session_state[key] = True
+
+with col2:
+    if st.button("Deselect All"):
+        for i in filtered_df.index:
+            key = f"{domain}_{i}"
+            st.session_state[key] = False
+
+# ===============================
+# DISPLAY QUESTIONS
+# ===============================
+st.subheader(f"Questions for: {domain}")
+
+selected_questions = []
+current_category = None
 
 for i, row in filtered_df.iterrows():
-    checked = select_all
 
-    if st.checkbox(
-        f"{row['Category']} → {row['Detailed Question']}",
-        value=checked,
-        key=i
-    ):
-        selected_rows.append(row)
+    category = row["Category"]
+    question = f"{category} → {row['Question']}"
 
-# -------------------------
-# Export Section
-# -------------------------
-st.markdown("---")
-st.subheader("Export")
+    if category != current_category:
+        st.markdown(f"### {category}")
+        current_category = category
 
-if selected_rows:
-    export_df = pd.DataFrame(selected_rows)
+    key = f"{domain}_{i}"
 
-    file_name = f"{domain}_Questionnaire.xlsx"
+    # IMPORTANT: initialize only once
+    if key not in st.session_state:
+        st.session_state[key] = False
 
-    export_df.to_excel(file_name, index=False)
+    # NO value= HERE
+    val = st.checkbox(question, key=key)
 
-    with open(file_name, "rb") as f:
-        st.download_button(
-            label="Download Excel",
-            data=f,
-            file_name=file_name,
-            mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
-        )
+    if val:
+        selected_questions.append({
+            "Category": category,
+            "Question": row["Question"],
+            "Priority": row["Priority"]
+        })
+
+# ===============================
+# EXPORT
+# ===============================
+st.divider()
+
+if selected_questions:
+    export_df = pd.DataFrame(selected_questions)
+
+    st.download_button(
+        "Download Selected Questions",
+        export_df.to_csv(index=False),
+        file_name=f"{domain}_questions.csv",
+        mime="text/csv"
+    )
 else:
-    st.warning("No questions selected")
+    st.info("No questions selected")
